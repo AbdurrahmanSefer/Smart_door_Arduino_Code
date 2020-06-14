@@ -1,0 +1,159 @@
+#include <ESP8266HTTPClient.h>
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+
+#include <Servo.h>
+ESP8266WebServer server(80); // Server'ın dinleyeceği portu belirler. Default port 80'dir.
+Servo servo;
+#include <SPI.h>
+#include <MFRC522.h>
+int SS_PIN = 2;
+int  RST_PIN = 4;
+
+int cameratrigger = 10;
+
+int red_led = 0;
+int green_led = 15;
+byte ID[4] = {242, 134, 200, 115};
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+
+String serverName = "http://arduino.smsreceive.site/api/fotoCheck/Arduino_request";
+
+int door_case = 1;
+
+int sayac = 0;
+
+void setup() {
+
+  Serial.begin(9600);
+  pinMode(red_led, OUTPUT);
+  pinMode(green_led, OUTPUT);
+  pinMode(16, INPUT);
+  pinMode(camera_pin, OUTPUT);
+
+  // 115200 baud rate'de seri haberleşmeyi başlatır.
+  WiFi.begin("TurkTelekom_ZFF4V", "fAe6124Fd29A3");  // Wifi ağa bağlanır. Ağ adınızı ve şifrenizi girin.
+
+  while (WiFi.status() != WL_CONNECTED) {  // Bağlantı başarılı ise aşağıdaki komutları ekrana yansıtır.
+
+    delay(500);
+    Serial.println("Bağlantı bekleniyor.");
+    servo.attach(5);
+    servo.write(0);
+  }
+
+  Serial.print("IP adresi: ");
+  Serial.println(WiFi.localIP());  // ESP8266 modülünün IP adresini ekrana yazar.
+  SPI.begin();
+  mfrc522.PCD_Init();
+  // Server'ı başlatır.
+
+}
+void loop() {
+  // Serial.print("IP adresi: ");
+  //Serial.println(WiFi.localIP());
+  // servo.write(90);
+  //delay(500);
+  //servo.write(0);
+  //server.handleClient();         // Server'a gelen http requestleri handle eder.
+
+  if (digitalRead(16) == HIGH)
+  {
+   digitalWrite(cameratrigger,HIGH);
+    delay(200);
+    digitalWrite(cameratrigger, LOW);
+  }
+
+
+  if (! mfrc522.PICC_IsNewCardPresent())
+  {
+
+  }
+  else if (! mfrc522.PICC_ReadCardSerial())
+  {
+  }
+  else
+  {
+    if (mfrc522.uid.uidByte[0] == ID[0] && mfrc522.uid.uidByte[1] == ID[1] && mfrc522.uid.uidByte[2] == ID[2] && mfrc522.uid.uidByte[3] == ID[3]) {
+      servo.write(180);
+      Serial.print("Kapı Açıldı");
+      digitalWrite(red_led, LOW);
+      digitalWrite(green_led, HIGH);
+      delay(3000);
+      servo.write(0);
+      delay(2000);
+      digitalWrite(red_led, HIGH);
+      digitalWrite(green_led, LOW);
+    } else {
+      digitalWrite(red_led, HIGH);
+      delay(2000);
+      digitalWrite(green_led, LOW);
+      Serial.print("Yetkisiz Kart");
+    }
+
+  }
+
+
+  if (door_case == 1) {
+    HTTPClient http;
+    String serverPath = serverName + "?temperature=24.37";
+    http.begin(serverPath.c_str());
+    while (true)
+    {
+      int httpResponseCode = http.GET();
+      if (httpResponseCode > 0) {
+        Serial.println();
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+        String payload = http.getString();
+        if (payload == "1")
+        {
+          servo.write(180);
+          Serial.print("Kapı Açıldı");
+          digitalWrite(red_led, LOW);
+          digitalWrite(green_led, HIGH);
+          delay(3000);
+          servo.write(0);
+          delay(2000);
+          digitalWrite(red_led, HIGH);
+          digitalWrite(green_led, LOW);
+          door_case = 0;
+          break;
+        } else if (payload == "0") {
+          digitalWrite(red_led, HIGH);
+          delay(2000);
+          digitalWrite(green_led, LOW);
+          door_case = 0;
+          break;
+        } else if (payload == "3")
+        {
+          sayac = sayac + 1;
+          if (sayac == 20)
+          {
+            door_case = 0;
+            break;
+          }
+        }
+        else {
+          sayac = sayac + 1;
+          door_case = 0;
+          if (sayac == 5)
+          {
+            break;
+          }
+        }
+        delay(3000);
+        Serial.println(payload);
+      }
+      else {
+        Serial.print("Error code: ");
+        Serial.println(httpResponseCode);
+      }
+    }
+  }
+
+  mfrc522.PICC_HaltA();
+  Serial.println(" " );
+}
+
